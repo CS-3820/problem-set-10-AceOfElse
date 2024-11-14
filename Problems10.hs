@@ -103,17 +103,17 @@ substUnder x m y n
 subst :: String -> Expr -> Expr -> Expr
 subst _ _ (Const i) = Const i
 subst x m (Plus n1 n2) = Plus (subst x m n1) (subst x m n2)
-subst x m (Var y) 
+subst x m (Var y)
   | x == y = m
   | otherwise = Var y
-subst x m (Lam y n) = Lam y (substUnder x m y n)
+subst x m (Lam y n)
+  | x == y = Lam y n
+  | otherwise = Lam y (subst x m n)
 subst x m (App n1 n2) = App (subst x m n1) (subst x m n2)
-
 subst x m (Store n) = Store (subst x m n)
 subst _ _ Recall = Recall
-
 subst x m (Throw n) = Throw (subst x m n)
-subst x m (Catch n y n') = Catch (subst x m n) y (if x == y then n' else subst x m n')
+subst x m (Catch n y n') = Catch (subst x m n) y (substUnder x m y n')
 
 {-------------------------------------------------------------------------------
 
@@ -207,52 +207,73 @@ bubble; this won't *just* be `Throw` and `Catch.
 -------------------------------------------------------------------------------}
 
 smallStep :: (Expr, Expr) -> Maybe (Expr, Expr)
-smallStep (Plus (Const m) (Const n), acc) = Just (Const (m + n), acc)
-smallStep (Plus v@(Const _) n, acc) = do
-  (n', acc') <- smallStep (n, acc)
-  Just (Plus v n', acc')
-smallStep (Plus m n, acc) = do
-  (m', acc') <- smallStep (m, acc)
-  Just (Plus m' n, acc')
-
--- Lambda calc
-smallStep (App (Lam x y) v@(Const _), acc) = Just (subst x v y, acc)
-smallStep (App (Lam x y) v@(Lam _ _), acc) = Just (subst x v y, acc)
-smallStep (App m n, acc) = case m of
-  Lam _ _ -> do
-    (n' , acc') <- smallStep (n, acc)
-    Just (App m n', acc')
-  _ -> do
-    (m', acc') <- smallStep (m, acc)
-    Just (App m' n, acc')
-
--- Accumulator
-smallStep (Store v@(Const _), _) = Just (Const 0, v)
-smallStep (Store n, acc) = do
-  (n', acc') <- smallStep (n, acc)
-  Just (Store n', acc')
+smallStep (Const _, acc) = Nothing
+smallStep (Plus (Const i) (Const j), acc) = Just (Const (i + j), acc)
+smallStep (Plus m n, acc)
+  | isValue m = case smallStep (n, acc) of
+      Just (n', acc') -> Just (Plus m n', acc')
+      Nothing -> Nothing
+  | isValue n = case smallStep (m, acc) of
+      Just (m', acc') -> Just (Plus m' n, acc')
+      Nothing -> Nothing
+  | otherwise = case smallStep (m, acc) of
+      Just (m', acc') -> Just (Plus m' n, acc')
+      Nothing -> case smallStep (n, acc) of
+        Just (n', acc') -> Just (Plus m n', acc')
+        Nothing -> Nothing
+smallStep (Var _, acc) = Nothing
+smallStep (Lam _ _, acc) = Nothing
+smallStep (App (Lam x m) n, acc)
+  | isValue n = Just (subst x n m, acc)
+smallStep (App m n, acc)
+  | isValue m = case smallStep (n, acc) of
+      Just (n', acc') -> Just (App m n', acc')
+      Nothing -> Nothing
+  | otherwise = case smallStep (m, acc) of
+      Just (m', acc') -> Just (App m' n, acc')
+      Nothing -> Nothing
+smallStep (Store m, acc)
+  | isValue m = Just (Store m, m)
+  | otherwise = case smallStep (m, acc) of
+      Just (m', acc') -> Just (Store m', acc')
+      Nothing -> Nothing
 smallStep (Recall, acc) = Just (acc, acc)
+smallStep (Throw m, acc)
+  | isValue m = Just (Throw m, acc)
+  | otherwise = case smallStep (m, acc) of
+      Just (m', acc') -> Just (Throw m', acc')
+      Nothing -> Nothing
+smallStep (Catch (Throw m) y n, acc) = Just (subst y m n, acc)
+smallStep (Catch m y n, acc)
+  | isValue m = Just (m, acc)
+  | otherwise = case smallStep (m, acc) of
+      Just (m', acc') -> Just (Catch m' y n, acc')
+      Nothing -> Nothing
 
--- Exceptions
-smallStep (Throw v@(Const _), acc) = Just (Throw v, acc)
-smallStep (Throw n, acc) = do
-  (n', acc') <- smallStep (n, acc)
-  Just (Throw n', acc')
+-- Helper function to step through an expression.
+step :: Expr -> Expr
+step expr = case smallStep (expr, undefined) of
+  Just (e, _) -> e
+  Nothing -> expr
 
--- Catch
-smallStep (Catch v@(Const _) _ _, acc) = Just (v, acc)
-smallStep (Catch (Throw v@(Const _)) y n, acc) = Just (subst y v n, acc)
-smallStep (Catch m y n, acc) = do
-  (m', acc') <- smallStep (m, acc)
-  Just (Catch m' y n, acc')
+isThrow :: Expr -> Bool
+isThrow (Throw _) = True
+isThrow _ = False
 
-smallStep _ = Nothing
+getThrow :: Expr -> Expr
+getThrow (Throw m) = m
+getThrow _ = error "Not a Throw expression"
 
+eval :: Expr -> Int
+eval (Const i) = i
+eval _ = error "Not a Const expression"
 
+-- Steps function to accumulate all the steps of the evaluation
 steps :: (Expr, Expr) -> [(Expr, Expr)]
 steps s = case smallStep s of
-            Nothing -> [s]
-            Just s' -> s : steps s'
+  Nothing -> [s]
+  Just s' -> s : steps s'
 
-prints :: Show a => [a] -> IO ()
+-- Printing function for showing results
+prints :: (Show a) => [a] -> IO ()
 prints = mapM_ print
