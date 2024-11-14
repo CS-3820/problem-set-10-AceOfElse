@@ -208,27 +208,26 @@ bubble; this won't *just* be `Throw` and `Catch.
 -------------------------------------------------------------------------------}
 
 smallStep :: (Expr, Expr) -> Maybe (Expr, Expr)
-smallStep (Const _, acc) = trace "smallStep: Const" $ Nothing
+smallStep (Const _, acc) = trace "smallStep: Const" Nothing
 smallStep (Plus (Const i) (Const j), acc) =
   trace ("smallStep: Plus " ++ show (Const i) ++ " " ++ show (Const j)) $
     Just (Const (i + j), acc)
 smallStep (Plus m n, acc) =
-  trace ("smallStep: Plus " ++ show m ++ " " ++ show n) $
-    (if isValue m then (case smallStep (n, acc) of
+  trace ("smallStep: Plus " ++ show m ++ " " ++ show n) (if isValue m then (case smallStep (n, acc) of
     Just (n', acc') -> trace ("  n' = " ++ show n') $ Just (Plus m n', acc')
-    Nothing -> trace "  n did not step" $ Nothing) else (if isValue n then (case smallStep (m, acc) of
+    Nothing -> trace "  n did not step" Nothing) else (if isValue n then (case smallStep (m, acc) of
     Just (m', acc') -> trace ("  m' = " ++ show m') $ Just (Plus m' n, acc')
-    Nothing -> trace "  m did not step" $ Nothing) else (case smallStep (m, acc) of
+    Nothing -> trace "  m did not step" Nothing) else (case smallStep (m, acc) of
     Just (m', acc') ->
       case smallStep (n, acc') of
         Just (n', acc'') -> trace ("  n' = " ++ show n') $ Just (Plus m' n', acc'')
-        Nothing -> trace "  n did not step" $ Nothing
+        Nothing -> trace "  n did not step" Nothing
     Nothing ->
       case smallStep (n, acc) of
         Just (n', acc') -> trace ("  n' = " ++ show n') $ Just (Plus m n', acc')
-        Nothing -> trace "  n did not step" $ Nothing)))
-smallStep (Var _, acc) = trace "smallStep: Var" $ Nothing
-smallStep (Lam _ _, acc) = trace "smallStep: Lam" $ Nothing
+        Nothing -> trace "  n did not step" Nothing)))
+smallStep (Var _, acc) = trace "smallStep: Var" Nothing
+smallStep (Lam _ _, acc) = trace "smallStep: Lam" Nothing
 smallStep (App (Lam x m) n, acc)
   | isValue n =
       trace ("smallStep: App " ++ show (Lam x m) ++ " " ++ show n) $
