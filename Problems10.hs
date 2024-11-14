@@ -225,7 +225,7 @@ smallStep (Plus m n, acc)
 --   | otherwise = case smallStep (m, acc) of
 --       Just (m', acc') -> Just (Throw m', acc')
 --       Nothing -> Nothing
--- Catch expressions
+-- Catch expression
 smallStep (Catch m y n, acc) = case smallStep (m, acc) of
   Just (m', acc') -> Just (Catch m' y n, acc')
   Nothing ->
