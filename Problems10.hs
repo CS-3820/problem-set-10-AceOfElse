@@ -208,53 +208,56 @@ bubble; this won't *just* be `Throw` and `Catch.
 -------------------------------------------------------------------------------}
 
 smallStep :: (Expr, Expr) -> Maybe (Expr, Expr)
-smallStep (Const _, acc) = trace "smallStep: Const" Nothing
-smallStep (Plus (Const i) (Const j), acc) =
-  trace ("smallStep: Plus " ++ show (Const i) ++ " " ++ show (Const j)) $
-    Just (Const (i + j), acc)
-smallStep (Plus m n, acc) =
-  trace ("smallStep: Plus " ++ show m ++ " " ++ show n) (if isValue m then (case smallStep (n, acc) of
-    Just (n', acc') -> trace ("  n' = " ++ show n') $ Just (Plus m n', acc')
-    Nothing -> trace "  n did not step" Nothing) else (if isValue n then (case smallStep (m, acc) of
-    Just (m', acc') -> trace ("  m' = " ++ show m') $ Just (Plus m' n, acc')
-    Nothing -> trace "  m did not step" Nothing) else (case smallStep (m, acc) of
-    Just (m', acc') ->
-      case smallStep (n, acc') of
-        Just (n', acc'') -> trace ("  n' = " ++ show n') $ Just (Plus m' n', acc'')
-        Nothing -> trace "  n did not step" Nothing
-    Nothing ->
-      case smallStep (n, acc) of
-        Just (n', acc') -> trace ("  n' = " ++ show n') $ Just (Plus m n', acc')
-        Nothing -> trace "  n did not step" Nothing)))
-smallStep (Var _, acc) = trace "smallStep: Var" Nothing
-smallStep (Lam _ _, acc) = trace "smallStep: Lam" Nothing
+-- Constants don't step
+smallStep (Const _, acc) = Nothing
+-- Plus expressions
+smallStep (Plus (Const i) (Const j), acc) = Just (Const (i + j), acc)
+smallStep (Plus m n, acc)
+  | isValue m = case smallStep (n, acc) of
+      Just (n', acc') -> Just (Plus m n', acc')
+      Nothing -> Nothing
+  | otherwise = case smallStep (m, acc) of
+      Just (m', acc') -> Just (Plus m' n, acc')
+      Nothing -> Nothing
+-- Throw expressions
+-- smallStep (Throw m, acc)
+--   | isValue m = Just (Throw m, acc)
+--   | otherwise = case smallStep (m, acc) of
+--       Just (m', acc') -> Just (Throw m', acc')
+--       Nothing -> Nothing
+-- Catch expressions
+smallStep (Catch m y n, acc) = case smallStep (m, acc) of
+  Just (m', acc') -> Just (Catch m' y n, acc')
+  Nothing ->
+    if isValue m
+      then case m of
+        Throw w -> Just (subst y w n, acc)
+        _ -> Just (m, acc)
+      else Nothing
+--Function application
 smallStep (App (Lam x m) n, acc)
-  | isValue n =
-      trace ("smallStep: App " ++ show (Lam x m) ++ " " ++ show n) $
-        Just (subst x n m, acc)
+  | isValue n = Just (subst x n m, acc)
+  | otherwise = case smallStep (n, acc) of
+      Just (n', acc') -> Just (App (Lam x m) n', acc')
+      Nothing -> Nothing
 smallStep (App m n, acc)
-  | isValue m =
-      trace ("smallStep: App " ++ show m ++ " " ++ show n) $
-        case smallStep (n, acc) of
-          Just (n', acc') -> Just (App m n', acc')
-          Nothing -> Nothing
-  | otherwise =
-      trace ("smallStep: App " ++ show m ++ " " ++ show n) $
-        case smallStep (m, acc) of
-          Just (m', acc') -> Just (App m' n, acc')
-          Nothing -> Nothing
+  | isValue m = case smallStep (n, acc) of
+      Just (n', acc') -> Just (App m n', acc')
+      Nothing -> Nothing
+  | otherwise = case smallStep (m, acc) of
+      Just (m', acc') -> Just (App m' n, acc')
+      Nothing -> Nothing
+-- Recall returns the current accumulator value
+smallStep (Recall, acc) = Just (acc, acc)
+-- Store updates the accumulator with a value
+smallStep (Store m, acc)
+  | isValue m = Just (Const 0, m) -- Store expression returns a dummy value
+  | otherwise = case smallStep (m, acc) of
+      Just (m', acc') -> Just (Store m', acc')
+      Nothing -> Nothing
+-- Catch-all case for unhandled expressions
+smallStep (_, _) = Nothing
 
-isThrow :: Expr -> Bool
-isThrow (Throw _) = True
-isThrow _ = False
-
-getThrow :: Expr -> Expr
-getThrow (Throw m) = m
-getThrow _ = error "Not a Throw expression"
-
-eval :: Expr -> Int
-eval (Const i) = i
-eval _ = error "Not a Const expression"
 
 -- Steps function to accumulate all the steps of the evaluation
 steps :: (Expr, Expr) -> [(Expr, Expr)]
