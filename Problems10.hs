@@ -108,7 +108,12 @@ subst x m (Var y)
   | otherwise = Var y
 subst x m (Lam y n) = Lam y (substUnder x m y n)
 subst x m (App n1 n2) = App (subst x m n1) (subst x m n2)
-subst x m n = undefined
+
+subst x m (Store n) = Store (subst x m n)
+subst _ _ Recall = Recall
+
+subst x m (Throw n) = Throw (subst x m n)
+subst x m (Catch n y n') = Catch (subst x m n) y (if x == y then n' else subst x m n')
 
 {-------------------------------------------------------------------------------
 
@@ -202,7 +207,47 @@ bubble; this won't *just* be `Throw` and `Catch.
 -------------------------------------------------------------------------------}
 
 smallStep :: (Expr, Expr) -> Maybe (Expr, Expr)
-smallStep = undefined
+smallStep (Plus (Const m) (Const n), acc) = Just (Const (m + n), acc)
+smallStep (Plus v@(Const _) n, acc) = do
+  (n', acc') <- smallStep (n, acc)
+  Just (Plus v n', acc')
+smallStep (Plus m n, acc) = do
+  (m', acc') <- smallStep (m, acc)
+  Just (Plus m' n, acc')
+
+-- Lambda calc
+smallStep (App (Lam x y) v@(Const _), acc) = Just (subst x v y, acc)
+smallStep (App (Lam x y) v@(Lam _ _), acc) = Just (subst x v y, acc)
+smallStep (App m n, acc) = case m of
+  Lam _ _ -> do
+    (n' , acc') <- smallStep (n, acc)
+    Just (App m n', acc')
+  _ -> do
+    (m', acc') <- smallStep (m, acc)
+    Just (App m' n, acc')
+
+-- Accumulator
+smallStep (Store v@(Const _), _) = Just (Const 0, v)
+smallStep (Store n, acc) = do
+  (n', acc') <- smallStep (n, acc)
+  Just (Store n', acc')
+smallStep (Recall, acc) = Just (acc, acc)
+
+-- Exceptions
+smallStep (Throw v@(Const _), acc) = Just (Throw v, acc)
+smallStep (Throw n, acc) = do
+  (n', acc') <- smallStep (n, acc)
+  Just (Throw n', acc')
+
+-- Catch
+smallStep (Catch v@(Const _) _ _, acc) = Just (v, acc)
+smallStep (Catch (Throw v@(Const _)) y n, acc) = Just (subst y v n, acc)
+smallStep (Catch m y n, acc) = do
+  (m', acc') <- smallStep (m, acc)
+  Just (Catch m' y n, acc')
+
+smallStep _ = Nothing
+
 
 steps :: (Expr, Expr) -> [(Expr, Expr)]
 steps s = case smallStep s of
