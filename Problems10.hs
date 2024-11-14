@@ -1,5 +1,6 @@
 {-# LANGUAGE StandaloneDeriving #-}
 module Problems10 where
+import Debug.Trace
 
 {-------------------------------------------------------------------------------
 
@@ -33,14 +34,14 @@ accumulator was.
 -- Here is our expression data type
 
 data Expr = -- Arithmetic
-            Const Int | Plus Expr Expr 
+            Const Int | Plus Expr Expr
             -- λ-calculus
           | Var String | Lam String Expr | App Expr Expr
             -- accumulator
-          | Store Expr | Recall 
+          | Store Expr | Recall
             -- exceptions
-          | Throw Expr | Catch Expr String Expr 
-  deriving Eq          
+          | Throw Expr | Catch Expr String Expr
+  deriving Eq
 
 deriving instance Show Expr
 
@@ -59,7 +60,7 @@ instance Show Expr where
   showsPrec i Recall    = showString "recall"
   showsPrec i (Throw m) = showParen (i > 2) $ showString "throw " . showsPrec 3 m
   showsPrec i (Catch m y n) = showParen (i > 0) $ showString "try " . showsPrec 0 m . showString " catch " . showString y . showString " -> " . showsPrec 0 n
--}  
+-}
 
 -- Values are, as usual, integer and function constants
 isValue :: Expr -> Bool
@@ -96,7 +97,7 @@ be replaced by the substitution?
 -------------------------------------------------------------------------------}
 
 substUnder :: String -> Expr -> String -> Expr -> Expr
-substUnder x m y n 
+substUnder x m y n
   | x == y = n
   | otherwise = subst x m n
 
@@ -207,54 +208,42 @@ bubble; this won't *just* be `Throw` and `Catch.
 -------------------------------------------------------------------------------}
 
 smallStep :: (Expr, Expr) -> Maybe (Expr, Expr)
-smallStep (Const _, acc) = Nothing
-smallStep (Plus (Const i) (Const j), acc) = Just (Const (i + j), acc)
-smallStep (Plus m n, acc)
-  | isValue m = case smallStep (n, acc) of
-      Just (n', acc') -> Just (Plus m n', acc')
-      Nothing -> Nothing
-  | isValue n = case smallStep (m, acc) of
-      Just (m', acc') -> Just (Plus m' n, acc')
-      Nothing -> Nothing
-  | otherwise = case smallStep (m, acc) of
-      Just (m', acc') -> Just (Plus m' n, acc')
-      Nothing -> case smallStep (n, acc) of
-        Just (n', acc') -> Just (Plus m n', acc')
-        Nothing -> Nothing
-smallStep (Var _, acc) = Nothing
-smallStep (Lam _ _, acc) = Nothing
+smallStep (Const _, acc) = trace "smallStep: Const" $ Nothing
+smallStep (Plus (Const i) (Const j), acc) =
+  trace ("smallStep: Plus " ++ show (Const i) ++ " " ++ show (Const j)) $
+    Just (Const (i + j), acc)
+smallStep (Plus m n, acc) =
+  trace ("smallStep: Plus " ++ show m ++ " " ++ show n) $
+    (if isValue m then (case smallStep (n, acc) of
+    Just (n', acc') -> trace ("  n' = " ++ show n') $ Just (Plus m n', acc')
+    Nothing -> trace "  n did not step" $ Nothing) else (if isValue n then (case smallStep (m, acc) of
+    Just (m', acc') -> trace ("  m' = " ++ show m') $ Just (Plus m' n, acc')
+    Nothing -> trace "  m did not step" $ Nothing) else (case smallStep (m, acc) of
+    Just (m', acc') ->
+      case smallStep (n, acc') of
+        Just (n', acc'') -> trace ("  n' = " ++ show n') $ Just (Plus m' n', acc'')
+        Nothing -> trace "  n did not step" $ Nothing
+    Nothing ->
+      case smallStep (n, acc) of
+        Just (n', acc') -> trace ("  n' = " ++ show n') $ Just (Plus m n', acc')
+        Nothing -> trace "  n did not step" $ Nothing)))
+smallStep (Var _, acc) = trace "smallStep: Var" $ Nothing
+smallStep (Lam _ _, acc) = trace "smallStep: Lam" $ Nothing
 smallStep (App (Lam x m) n, acc)
-  | isValue n = Just (subst x n m, acc)
+  | isValue n =
+      trace ("smallStep: App " ++ show (Lam x m) ++ " " ++ show n) $
+        Just (subst x n m, acc)
 smallStep (App m n, acc)
-  | isValue m = case smallStep (n, acc) of
-      Just (n', acc') -> Just (App m n', acc')
-      Nothing -> Nothing
-  | otherwise = case smallStep (m, acc) of
-      Just (m', acc') -> Just (App m' n, acc')
-      Nothing -> Nothing
-smallStep (Store m, acc)
-  | isValue m = Just (Store m, m)
-  | otherwise = case smallStep (m, acc) of
-      Just (m', acc') -> Just (Store m', acc')
-      Nothing -> Nothing
-smallStep (Recall, acc) = Just (acc, acc)
-smallStep (Throw m, acc)
-  | isValue m = Just (Throw m, acc)
-  | otherwise = case smallStep (m, acc) of
-      Just (m', acc') -> Just (Throw m', acc')
-      Nothing -> Nothing
-smallStep (Catch (Throw m) y n, acc) = Just (subst y m n, acc)
-smallStep (Catch m y n, acc)
-  | isValue m = Just (m, acc)
-  | otherwise = case smallStep (m, acc) of
-      Just (m', acc') -> Just (Catch m' y n, acc')
-      Nothing -> Nothing
-
--- Helper function to step through an expression.
-step :: Expr -> Expr
-step expr = case smallStep (expr, undefined) of
-  Just (e, _) -> e
-  Nothing -> expr
+  | isValue m =
+      trace ("smallStep: App " ++ show m ++ " " ++ show n) $
+        case smallStep (n, acc) of
+          Just (n', acc') -> Just (App m n', acc')
+          Nothing -> Nothing
+  | otherwise =
+      trace ("smallStep: App " ++ show m ++ " " ++ show n) $
+        case smallStep (m, acc) of
+          Just (m', acc') -> Just (App m' n, acc')
+          Nothing -> Nothing
 
 isThrow :: Expr -> Bool
 isThrow (Throw _) = True
