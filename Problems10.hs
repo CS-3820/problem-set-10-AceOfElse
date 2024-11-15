@@ -208,69 +208,63 @@ bubble; this won't *just* be `Throw` and `Catch.
 -------------------------------------------------------------------------------}
 
 smallStep :: (Expr, Expr) -> Maybe (Expr, Expr)
--- Basic arithmetic operation for Plus
+-- Arithmetic cases
 smallStep (Plus (Const x) (Const y), store) = Just (Const (x + y), store)
 smallStep (Plus e1 e2, store) =
   case (e1, e2) of
-    -- If any side has a Throw, propagate it immediately
     (Throw ex, _) -> Just (Throw ex, store)
     (_, Throw ex) -> Just (Throw ex, store)
-    -- Otherwise, step through the expressions
     _ -> case smallStep (e1, store) of
       Just (e1', store') -> Just (Plus e1' e2, store')
       Nothing -> do
         (e2', store') <- smallStep (e2, store)
         return (Plus e1 e2', store')
 
--- Application of Lambda expressions with Throw handling
+-- App cases
+smallStep (App (Lam x body) (Const v), store) = Just (subst x (Const v) body, store)
 smallStep (App (Lam x body) e, store) =
   case e of
-    -- If there's a Throw, short-circuit and return it
     Throw ex -> Just (Throw ex, store)
-    -- Otherwise, evaluate the expression `e`
     _ -> case smallStep (e, store) of
       Just (e', store') -> Just (App (Lam x body) e', store')
       Nothing -> Just (subst x e body, store)
--- Handling Store operation
+
+-- Store cases
 smallStep (Store e, storedVal) =
   case e of
-    -- When we store a constant, update both the expression and the stored value
     Const v -> Just (Const v, Const v)
-    -- If `Throw` within a `Store`, short-circuit and throw
     Throw ex -> Just (Throw ex, storedVal)
-    -- Otherwise, recursively evaluate `e` in Store context
     _ -> case smallStep (e, storedVal) of
       Just (e', storedVal') -> Just (Store e', storedVal')
       Nothing -> Nothing
--- Handling Recall operation by fetching the stored value
+
+-- Recall case
 smallStep (Recall, storedVal) = Just (storedVal, storedVal)
--- Catch expressions handling exceptions
+
+-- Throw cases
 smallStep (Catch (Throw ex) var body, store) = Just (subst var ex body, store)
 smallStep (Catch e var body, store) =
   case e of
-    -- If there’s already a Throw, propagate it
-    Throw ex -> Just (Throw ex, store)
-    -- Otherwise, evaluate the inner expression of `Catch`
+    Const v -> Just (subst var (Const v) body, store)
     _ -> do
       (e', store') <- smallStep (e, store)
-      return (Catch e' var body, store')
+      case e' of
+        Const v -> Just (subst var (Const v) body, store')
+        _ -> return (Catch e' var body, store')
 
--- Nested Throws handling
+-- Throws handling
 smallStep (Throw (Throw ex), store) = Just (Throw ex, store)
--- If no specific rule applies, no reduction occurs
 smallStep _ = Nothing
 
--- Helpers to identify Throw expressions
+-- Helpers to identify Throw
 isThrow :: Expr -> Bool
 isThrow (Throw _) = True
 isThrow _ = False
 
--- Steps function to accumulate all the steps of the evaluation
 steps :: (Expr, Expr) -> [(Expr, Expr)]
 steps s = case smallStep s of
   Nothing -> [s]
   Just s' -> s : steps s'
 
--- Printing function for showing results
 prints :: (Show a) => [a] -> IO ()
 prints = mapM_ print
